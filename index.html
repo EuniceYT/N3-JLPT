@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JLPT N3 日語檢定線上練習</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Vue 3 CDN -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+</head>
+<body class="bg-slate-50 min-h-screen text-slate-800 font-sans">
+
+  <div id="app" class="max-w-3xl mx-auto px-4 py-8">
+    
+    <!-- 頂部導覽列 -->
+    <header class="flex justify-between items-center mb-8 pb-4 border-b border-slate-200">
+      <h1 class="text-xl font-bold text-indigo-700 flex items-center gap-2">
+        <span>🇯🇵</span> JLPT N3 日語檢定練習
+      </h1>
+      <div class="flex gap-2">
+        <button @click="resetToHome" class="px-3 py-1.5 text-sm bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition">首頁</button>
+      </div>
+    </header>
+
+    <!-- 1. 設定頁面 (開始新回合) -->
+    <div v-if="state === 'setup'" class="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-slate-100">
+      <h2 class="text-lg font-bold mb-6 text-slate-900">開始新回合</h2>
+      
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+        <!-- 題目分類 -->
+        <div>
+          <label class="block text-xs font-semibold text-slate-500 mb-1">題目範圍</label>
+          <select v-model="selectedCategory" @change="onCategoryChange" class="w-full p-2.5 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500 outline-none">
+            <option value="ALL">全部範圍 (70 題)</option>
+            <option value="漢字讀音">漢字讀音 (15 題)</option>
+            <option value="漢字書寫">漢字書寫 (15 題)</option>
+            <option value="近義詞與詞義替換">近義詞與詞義替換 (15 題)</option>
+            <option value="詞彙語境與填空">詞彙語境與填空 (15 題)</option>
+            <option value="文法、句型與讀解">文法、句型與讀解 (10 題)</option>
+          </select>
+        </div>
+
+        <!-- 題目數量 (動態篩選合理選項：10, 20, 30, 40, 50, 60 及全部) -->
+        <div>
+          <label class="block text-xs font-semibold text-slate-500 mb-1">題目數量</label>
+          <select v-model.number="questionAmount" class="w-full p-2.5 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500 outline-none">
+            <option v-for="opt in availableAmountOptions" :key="opt.value" :value="opt.value">
+              {{ opt.label }}
+            </option>
+          </select>
+        </div>
+      </div>
+
+      <!-- 開始按鈕 -->
+      <button @click="startQuiz" class="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-xl shadow-md transition duration-200 flex items-center justify-center gap-2">
+        開始作答 →
+      </button>
+
+      <div class="mt-6 pt-4 border-t border-slate-100 text-xs text-slate-400 flex flex-wrap gap-2">
+        <span>作答時可用 <kbd class="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded text-slate-600">A/B/C/D</kbd> 或數字按鍵選答</span>
+        <span><kbd class="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded text-slate-600">Enter</kbd> 下一題</span>
+      </div>
+    </div>
+
+    <!-- 2. 刷題頁面 -->
+    <div v-else-if="state === 'quiz'" class="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-slate-100">
+      <!-- 進度條與資訊 -->
+      <div class="flex justify-between items-center text-sm font-medium text-slate-500 mb-4">
+        <span>分類：{{ currentQuestion.category }}</span>
+        <span>{{ currentIndex + 1 }} / {{ quizList.length }} 題</span>
+      </div>
+      
+      <div class="w-full bg-slate-100 rounded-full h-2 mb-6">
+        <div class="bg-indigo-600 h-2 rounded-full transition-all duration-300" :style="{ width: ((currentIndex + 1) / quizList.length * 100) + '%' }"></div>
+      </div>
+
+      <!-- 題目內文 -->
+      <h3 class="text-xl font-bold mb-6 text-slate-800 leading-relaxed">
+        {{ currentQuestion.question }}
+      </h3>
+
+      <!-- 選項列表 -->
+      <div class="space-y-3 mb-6">
+        <button 
+          v-for="(option, idx) in currentQuestion.options" 
+          :key="idx"
+          @click="selectOption(idx)"
+          :disabled="userAnswers[currentIndex] !== undefined"
+          :class="getOptionClass(idx)"
+          class="w-full p-4 text-left border rounded-xl font-medium transition flex justify-between items-center">
+          <span>{{ option }}</span>
+          <span v-if="userAnswers[currentIndex] !== undefined">
+            <span v-if="idx === currentQuestion.answer" class="text-emerald-600 font-bold">✓ 正確</span>
+            <span v-else-if="userAnswers[currentIndex] === idx" class="text-rose-600 font-bold">✗ 錯誤</span>
+          </span>
+        </button>
+      </div>
+
+      <!-- 解析說明 (已答題時顯示) -->
+      <div v-if="userAnswers[currentIndex] !== undefined" class="p-4 bg-slate-50 border border-slate-200 rounded-xl mb-6">
+        <h4 class="font-bold text-slate-700 mb-1">💡 題目解析</h4>
+        <p class="text-sm text-slate-600 leading-relaxed">{{ currentQuestion.explanation }}</p>
+      </div>
+
+      <!-- 下一題 / 完成按鈕 -->
+      <div class="flex justify-end">
+        <button 
+          v-if="userAnswers[currentIndex] !== undefined"
+          @click="nextQuestion"
+          class="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg transition">
+          {{ currentIndex < quizList.length - 1 ? '下一題 (Enter)' : '檢視結果' }}
+        </button>
+      </div>
+    </div>
+
+    <!-- 3. 結果統計頁面 -->
+    <div v-else-if="state === 'result'" class="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-slate-100 text-center">
+      <h2 class="text-2xl font-bold text-slate-800 mb-2">測驗完成！</h2>
+      <p class="text-slate-500 mb-6">這回合的成績表現如下：</p>
+
+      <div class="text-5xl font-extrabold text-indigo-600 mb-6">
+        {{ score }} <span class="text-lg font-normal text-slate-400">/ 100 分</span>
+      </div>
+
+      <p class="text-sm text-slate-600 mb-8">
+        答對 {{ correctCount }} 題，答錯 {{ quizList.length - correctCount }} 題。
+      </p>
+
+      <button @click="resetToHome" class="px-8 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-xl transition">
+        再練一次
+      </button>
+    </div>
+
+  </div>
+
+  <script>
+    // 完整 70 題資料庫
+    const questionsData = [
+      {"id": 1, "category": "漢字讀音", "question": "荷物が【届いた】。", "options": ["1. ついた", "2. いただいた", "3. ひらいた", "4. とどいた"], "answer": 3, "explanation": "届く(とどく) 表示送達、寄到。"},
+      {"id": 2, "category": "漢字讀音", "question": "【視点】がちがえば、考え方もちがってくる。", "options": ["1. じてん", "2. してん", "3. じでん", "4. しでん"], "answer": 1, "explanation": "視点(してん) 表示觀點、視角。"},
+      {"id": 3, "category": "漢字讀音", "question": "この商品は、20代の若者を【対象】にしている。", "options": ["1. たいぞう", "2. たいしょう", "3. だいぞう", "4. だいしょう"], "answer": 1, "explanation": "対象(たいしょう) 表示對象、目標。"},
+      {"id": 4, "category": "漢字讀音", "question": "話したい相手が留守だったので、【伝言】をたのんだ。", "options": ["1. てんげん", "2. でんげん", "3. でんごん", "4. てんごん"], "answer": 2, "explanation": "伝言(でんごん) 表示傳話。"},
+      {"id": 5, "category": "漢字讀音", "question": "今、上からの【指示】を待っているところです。", "options": ["1. しじ", "2. しし", "3. さしじ", "4. さしず"], "answer": 0, "explanation": "指示(しじ) 表示指示、指令。"},
+      {"id": 6, "category": "漢字讀音", "question": "このコンピューターソフトの【導入】で仕事がはやくできるようになった。", "options": ["1. とにゅう", "2. どうにゅう", "3. どうにゅ", "4. とにゅ"], "answer": 1, "explanation": "導入(どうにゅう) 表示導入、引進。"},
+      {"id": 7, "category": "漢字讀音", "question": "先日は大変おせわになり、ありがとうございました。", "options": ["1. せんにち", "2. さきひ", "3. せんじつ", "4. さきにち"], "answer": 2, "explanation": "先日(せんじつ) 表示前幾天、日前。"},
+      {"id": 8, "category": "漢字讀音", "question": "まだ事故の【原因】がわからない。", "options": ["1. げいん", "2. げにん", "3. げんいん", "4. げんにん"], "answer": 2, "explanation": "原因(げんいん) 表示原因。"},
+      {"id": 9, "category": "漢字讀音", "question": "この店は、【深夜】でも開いている。", "options": ["1. しんや", "2. しんよ", "3. ふかや", "4. ふかよ"], "answer": 0, "explanation": "深夜(しんや) 表示深夜、半夜。"},
+      {"id": 10, "category": "漢字讀音", "question": "学校の規則を【改めた】。", "options": ["1. まとめた", "2. あからめた", "3. みとめた", "4. あらためた"], "answer": 3, "explanation": "改める(あらためる) 表示改變、重新檢討。"},
+      {"id": 11, "category": "漢字讀音", "question": "【親しい】友達が引っ越した。", "options": ["1. したしい", "2. やさしい", "3. たのしい", "4. くわしい"], "answer": 0, "explanation": "親しい(したしい) 表示親近的、親密的。"},
+      {"id": 12, "category": "漢字讀音", "question": "きのうのパーティーはとても【楽しかったです】。", "options": ["1. うれし", "2. いそがし", "3. おかし", "4. たのし"], "answer": 3, "explanation": "楽しい(たのしい) 表示開心的、愉快的。"},
+      {"id": 13, "category": "漢字讀音", "question": "子どもにお菓子を【配った】。", "options": ["1. おくった", "2. くばった", "3. せおった", "4. ほうった"], "answer": 1, "explanation": "配る(くばる) 表示分發、留意。"},
+      {"id": 14, "category": "漢字讀音", "question": "楽しい時間はすぐ【過ぎて】しまう。", "options": ["1. つぎて", "2. つうぎて", "3. すぎて", "4. すうぎて"], "answer": 2, "explanation": "過ぎる(すぎる) 表示超過、經過。"},
+      {"id": 15, "category": "漢字讀音", "question": "普通（ふつう） 的中文意思是？", "options": ["1. 特別", "2. 普通、一般", "3. 複雜", "4. 簡單"], "answer": 1, "explanation": "普通(ふつう) 意為普通、一般。"},
+      {"id": 16, "category": "漢字書寫", "question": "この朝の【れんぞく】ドラマは、人気があるらしい。", "options": ["1. 運結", "2. 運続", "3. 連結", "4. 連続"], "answer": 3, "explanation": "連続(れんぞく) 表示連續。"},
+      {"id": 17, "category": "漢字書寫", "question": "店を出すのに、【てきとう】な場所が見つかりました。", "options": ["1. 適等", "2. 適当", "3. 的等", "4. 的当"], "answer": 1, "explanation": "適当(てきとう) 表示適當的、合適的。"},
+      {"id": 18, "category": "漢字書寫", "question": "アルバイトはたいへんだが、いい【けいけん】になると思う。", "options": ["1. 転験", "2. 軽験", "3. 経験", "4. 試験"], "answer": 2, "explanation": "経験(けいけん) 表示經驗。"},
+      {"id": 19, "category": "漢字書寫", "question": "【しんゆう】を大切にしたいと思う。", "options": ["1. 朋友", "2. 親友", "3. 真友", "4. 信友"], "answer": 1, "explanation": "親友(しんゆう) 表示摯友、好朋友。"},
+      {"id": 20, "category": "漢字書寫", "question": "あの人とは学校で知り合って、【したしく】なりました。", "options": ["1. 愛しく", "2. 友しく", "3. 親しく", "4. 新しく"], "answer": 2, "explanation": "親しい(したしい) 表示親切、親密。"},
+      {"id": 21, "category": "漢字書寫", "question": "【あツイ】本を、一日で最後まで読んだ。", "options": ["1. 太い", "2. 積い", "3. 暑い", "4. 厚い"], "answer": 3, "explanation": "厚い(あツイ) 表示厚的。"},
+      {"id": 22, "category": "漢字書寫", "question": "過去（かこ） 的正確漢字對應為？", "options": ["1. 過去", "2. 過古", "3. 果去", "4. 架去"], "answer": 0, "explanation": "かこ 的漢字寫法為「過去」。"},
+      {"id": 23, "category": "漢字書寫", "question": "現在（げんざい） 的正確漢字對應為？", "options": ["1. 原在", "2. 現在", "3. 源在", "4. 玄在"], "answer": 1, "explanation": "げんざい 的漢字寫法為「現在」。"},
+      {"id": 24, "category": "漢字書寫", "question": "広告（こうこく） 的正確漢字對應為？", "options": ["1. 広告", "2. 交告", "3. 行告", "4. 光告"], "answer": 0, "explanation": "こうこく 的漢字寫法為「広告」。"},
+      {"id": 25, "category": "漢字書寫", "question": "商品（しょうひん） 的正確漢字對應為？", "options": ["1. 少品", "2. 賞品", "3. 商品", "4. 昇品"], "answer": 2, "explanation": "しょうひん 的漢字寫法為「商品」。"},
+      {"id": 26, "category": "漢字書寫", "question": "到着（とうちゃく） 的正確漢字對應為？", "options": ["1. 東着", "2. 到着", "3. 答着", "4. 投着"], "answer": 1, "explanation": "とうちゃく 的漢字寫法為「到着」。"},
+      {"id": 27, "category": "漢字書寫", "question": "出張（しゅっちょう） 的正確漢字對應為？", "options": ["1. 出長", "2. 出帳", "3. 出張", "4. 出頂"], "answer": 2, "explanation": "しゅっちょう 的漢字寫法為「出張」。"},
+      {"id": 28, "category": "漢字書寫", "question": "調査（ちょうさ） 的正確漢字對應為？", "options": ["1. 調査", "2. 超査", "3. 兆査", "4. 頂査"], "answer": 0, "explanation": "ちょうさ 的漢字寫法為「調査」。"},
+      {"id": 29, "category": "漢字書寫", "question": "加熱（かねつ） 的正確漢字對應為？", "options": ["1. 加熱", "2. 包熱", "3. 可熱", "4. 兼熱"], "answer": 0, "explanation": "かねつ 的漢字寫法為「加熱」。"},
+      {"id": 30, "category": "漢字書寫", "question": "自然（しぜん） 的正確漢字對應為？", "options": ["1. 自然", "2. 志然", "3. 至然", "4. 始然"], "answer": 0, "explanation": "しぜん 的漢字寫法為「自然」。"},
+      {"id": 31, "category": "近義詞與詞義替換", "question": "選挙の結果には、田中さんを【のぞいて】、みんな満足していました。", "options": ["1. 中心に", "2. 以外は", "3. はじめ", "4. 交えて"], "answer": 1, "explanation": "除く(のぞく) 表示除去、不包含，與「以外は」同義。"},
+      {"id": 32, "category": "近義詞與詞義替換", "question": "今までの態度は【あらためた】ほうがいい。", "options": ["1. 続けた", "2. よくみた", "3. 反省した", "4. 直した"], "answer": 3, "explanation": "改める(あらためる) 表示改變、改正。"},
+      {"id": 33, "category": "近義詞與詞義替換", "question": "今年の冬は【ずいぶん】寒かったね。", "options": ["1. もっと", "2. とても", "3. ときどき", "4. すこし"], "answer": 1, "explanation": "随分(ずいぶん) 表示相當、很，同義於「とても」。"},
+      {"id": 34, "category": "近義詞與詞義替換", "question": "子どもたちの歌声に感動して、【つい】泣いてしまった。", "options": ["1. とうとう", "2. 思わず", "3. 少しだけ", "4. かなり"], "answer": 1, "explanation": "つい 表示不知不覺地、一不小心，同義於「思わず」。"},
+      {"id": 35, "category": "近義詞與詞義替換", "question": "姉は私より【やせている】。", "options": ["1. やさしい", "2. きびしい", "3. 太い", "4. 細い"], "answer": 3, "explanation": "細い(ほそい) 表示細瘦的。"},
+      {"id": 36, "category": "近義詞與詞義替換", "question": "彼が一人でいるのは【めずらしい】。", "options": ["1. いつものことだ", "2. よくあることだ", "3. めったにないことだ", "4. ぜったいないことだ"], "answer": 2, "explanation": "珍しい(めずらしい) 表示少見的，即「めったにないことだ」。"},
+      {"id": 37, "category": "近義詞與詞義替換", "question": "このテレビを【修理】してください。", "options": ["1. かたづけて", "2. とどけて", "3. はこんで", "4. なおして"], "answer": 3, "explanation": "修理(しゅうり) 表示修理（直す）。"},
+      {"id": 38, "category": "近義詞與詞義替換", "question": "昨日は、【よふかし】した。", "options": ["1. 早く寝た", "2. 遅くまでおきていた", "3. 朝まで起きていた", "4. ねぼうした"], "answer": 1, "explanation": "夜更かし(よふかし) 表示熬夜（遅くまでおきていた）。"},
+      {"id": 39, "category": "近義詞與詞義替換", "question": "彼は、【ゆたかな】家庭で育ったということです。", "options": ["1. 裕福な", "2. まずしい", "3. さびしい", "4. にぎやかな"], "answer": 0, "explanation": "裕福な(ゆうふくな) 表示富裕的（ゆたかな）。"},
+      {"id": 40, "category": "近義詞與詞義替換", "question": "インターネットで世界中の情報がすぐ手に入るなんて、【ふしぎだなあ】。", "options": ["1. すばらしい", "2. 理解できない", "3. すごい", "4. 便利だ"], "answer": 1, "explanation": "不思議な(ふしぎな) 表示不可思議的、難以理解的（理解できない）。"},
+      {"id": 41, "category": "近義詞與詞義替換", "question": "顔色が悪いですね。どこか【ぐあいが悪い】んですか。", "options": ["1. 都合", "2. 成績", "3. 調子", "4. 天気"], "answer": 2, "explanation": "具合/調子(ちょうし) 表示身體狀況。"},
+      {"id": 42, "category": "近義詞與詞義替換", "question": "彼は、【当分】帰ってきません。", "options": ["1. 今日中には", "2. まだ", "3. これからは", "4. しばらくの間"], "answer": 3, "explanation": "当分(とうぶん) 表示暫時、一段時間內（しばらくの間）。"},
+      {"id": 43, "category": "近義詞與詞義替換", "question": "首相は、【再度】アメリカを訪問することになった。", "options": ["1. 今度", "2. もう一度", "3. 再来週", "4. 二度"], "answer": 1, "explanation": "再度(さいど) 表示再次、再一次（もう一度）。"},
+      {"id": 44, "category": "近義詞與詞義替換", "question": "【しめきり】まではまだ時間があります。", "options": ["1. 発表", "2. 決定", "3. 期限", "4. 会議"], "answer": 2, "explanation": "締め切り 與 期限(きげん) 表示截止時間。"},
+      {"id": 45, "category": "近義詞與詞義替換", "question": "どうぞ【リラックス】してください。", "options": ["1. 急がないで", "2. 楽しんで", "3. 気楽にして", "4. 横になって"], "answer": 2, "explanation": "リラックス 表示放鬆、輕鬆（気楽にして）。"},
+      {"id": 46, "category": "詞彙語境與填空", "question": "彼は、新聞（  ）のアルバイトをしているそうです。", "options": ["1. 支配", "2. 宅配", "3. 配布", "4. 配達"], "answer": 3, "explanation": "新聞配達(はいたつ) 表示報紙投遞。"},
+      {"id": 47, "category": "詞彙語境與填空", "question": "彼は車の運転がとても上手ですよ。（  ）してください。", "options": ["1. 安全", "2. 安楽", "3. 安心", "4. 安易"], "answer": 2, "explanation": "安心(あんしん) 放心。"},
+      {"id": 48, "category": "詞彙語境與填空", "question": "この仕事を彼に頼んだら、気持ちよく（  ）くれました。", "options": ["1. 引き取って", "2. 引き受けて", "3. 引きつけて", "4. 引き分けて"], "answer": 1, "explanation": "引き受ける(ひきうける) 表示承擔、接受工作。"},
+      {"id": 49, "category": "詞彙語境與填空", "question": "彼女はファッション（  ）が良くて、いつもすてきな服を着ている。", "options": ["1. プラン", "2. センス", "3. アイデア", "4. スマート"], "answer": 1, "explanation": "センス 表示品味、感覺。"},
+      {"id": 50, "category": "詞彙語境與填空", "question": "野球の大会で、うちのチームが（  ）になった。", "options": ["1. ベスト", "2. トップ", "3. ファースト", "4. リード"], "answer": 1, "explanation": "トップ 表示第一名、頂尖。"},
+      {"id": 51, "category": "詞彙語境與填空", "question": "この学校は、よく勉強する（  ）学生が多いです。", "options": ["1. まじめな", "2. 温暖な", "3. 気の毒な", "4. 正確な"], "answer": 0, "explanation": "真面目な(まじめな) 表示認真。"},
+      {"id": 52, "category": "詞彙語境與填空", "question": "私の生まれたまちは、（  ）変わってしまいました。", "options": ["1. すっかり", "2. じっくり", "3. はっきり", "4. こっそり"], "answer": 0, "explanation": "すっかり 表示完全、徹底改變。"},
+      {"id": 53, "category": "詞彙語境與填空", "question": "新宿（  ）のバスに乗ってください。", "options": ["1. 行き", "2. あて", "3. 送り", "4. 向かい"], "answer": 0, "explanation": "行き(いき/ゆき) 表示開往某地的班車。"},
+      {"id": 54, "category": "詞彙語境與填空", "question": "妹はテニスに（  ）している。", "options": ["1. 要求", "2. 加熱", "3. 熱中", "4. 入力"], "answer": 2, "explanation": "熱中(ねっちゅう) 表示熱衷、專注。"},
+      {"id": 55, "category": "詞彙語境與填空", "question": "旅行の費用は安いほうがいいけれど、（  ）安くても心配になります。", "options": ["1. つまり", "2. ついに", "3. まるで", "4. あまり"], "answer": 3, "explanation": "あまり 表示太過於。"},
+      {"id": 56, "category": "詞彙語境與填空", "question": "いい天気だったのに、（  ）雨が降り出して、ぬれてしまった。", "options": ["1. 速やかに", "2. めったに", "3. とたんに", "4. 急に"], "answer": 3, "explanation": "急に(きゅうに) 表示突然。"},
+      {"id": 57, "category": "詞彙語境與填空", "question": "いらないものを捨てたら、部屋の中が（  ）した。", "options": ["1. しっかり", "2. すっきり", "3. すっかり", "4. はっきり"], "answer": 1, "explanation": "すっきり 表示舒暢、清爽。"},
+      {"id": 58, "category": "詞彙語境與填空", "question": "マラソン選手たちは、（  ）に向かって走り続けた。", "options": ["1. エンド", "2. ラスト", "3. ゴール", "4. フィニッシュ"], "answer": 2, "explanation": "ゴール 表示終點。"},
+      {"id": 59, "category": "詞彙語境與填空", "question": "【語用法】選出「わざわざ」使用最適當的句子：", "options": ["1. わざわざ迎えに来てくれて、ありがとう。", "2. これは、ワインをわざわざ入れるとおいしくなります。", "3. 彼は、わざわざ宿題を忘れてきたみたいです。", "4. わざわざテレビをつけておけば寂しくありません。"], "answer": 0, "explanation": "わざわざ 表示特地（特地來接我，謝謝）。"},
+      {"id": 60, "category": "詞彙語境與填空", "question": "【語用法】選出「代理」使用最適當的句子：", "options": ["1. 現金がなくても、代理のカードがあれば買い物はできる。", "2. このサプリメントは、野菜の代理の働きがある。", "3. 砂糖の代理にこれを入れると、太らないらしい。", "4. 入院中の社長の代理として、会議に出席した。"], "answer": 3, "explanation": "代理(だいり) 表示代表職務（作為社長代理出席）。"},
+      {"id": 61, "category": "文法、句型與讀解", "question": "根據考前懶人包，當看到動詞為「可能形」（如：勝てる、話せる）時，後面應優先搭配何者？", "options": ["1. ために", "2. ように", "3. わけにはいかない", "4. ことになっている"], "answer": 1, "explanation": "可能形+ように（可能形後面不要接ために）。"},
+      {"id": 62, "category": "文法、句型與讀解", "question": "關於「ために」與「ように」的區別，下列何者正確？", "options": ["1. ために 偏向自己有意志、可控制的動作", "2. ように 必須接在動詞意志形後面", "3. 勝てるために 是正確的句型", "4. 兩者完全可以互換使用"], "answer": 0, "explanation": "「ために」偏自己有意志、可控制的動作。"},
+      {"id": 63, "category": "文法、句型與讀解", "question": "句型「Vたまま」的主要用法與提醒為何？", "options": ["1. 表示事先準備好", "2. 保持做完後的狀態（如：電気をつけたまま寝た）", "3. 表示遺憾或不小心做了某事", "4. 表示將來長期趨勢的變化"], "answer": 1, "explanation": "Vたまま 表示保持做完後的狀態。"},
+      {"id": 64, "category": "文法、句型與讀解", "question": "看到句中出現「うっかり」、「つい」、「間違って」時，最常搭配下列哪一個句型？", "options": ["1. Vておく", "2. Vてしまう", "3. Vたことがある", "4. Vていく"], "answer": 1, "explanation": "vてしまう 表示不小心、遺憾或做完。"},
+      {"id": 65, "category": "文法、句型與讀解", "question": "表示「自己決定要做某事（如：毎朝歩く...）」與「規定、安排好（如：九時までに来る...）」的區別分別是？", "options": ["1. ことにする / ことになる", "2. ことになる / ことにする", "3. わけがない / わけではない", "4. べきだ / はずだ"], "answer": 0, "explanation": "ことにしている（自己決定） / ことになっている（規定、安排）。"},
+      {"id": 66, "category": "文法、句型與讀解", "question": "「わけ三兄弟」中，表示「因責任、立場或情況不允許（不能這樣做）」的是哪一個？", "options": ["1. わけではない", "2. わけがない", "3. わけにはいかない", "4. わけになる"], "answer": 2, "explanation": "わけにはいかない＝不能，因責任、立場、情況不允許。"},
+      {"id": 67, "category": "文法、句型與讀解", "question": "在讀解文章中，出現「しかし」或「ところが」時，閱讀判斷重點為何？", "options": ["1. 後面常是答案或文章重點", "2. 表示舉例說明，可直接略過", "3. 表示解決方法", "4. 表示作者整理的結論"], "answer": 0, "explanation": "しかし/ところが 後面常是答案。"},
+      {"id": 68, "category": "文法、句型與讀解", "question": "在讀解文章中，出現「つまり」或「ということは」時，代表什麼含義？", "options": ["1. 文章轉折", "2. 作者整理的結論或重點", "3. 外部傳聞消息", "4. 比較與對照"], "answer": 1, "explanation": "つまり/ということは 常表示結論與作者整理重點。"},
+      {"id": 69, "category": "文法、句型與讀解", "question": "在讀解文章中，若出現「〜ことがわかる / 〜ことがわかった」，其重點為？", "options": ["1. 研究結果、文章重點", "2. 自己主觀強烈斷定", "3. 正在列舉代表動作", "4. 表示事情尚未決定"], "answer": 0, "explanation": "〜ことがわかる 表示研究結果、文章重點。"},
+      {"id": 70, "category": "文法、句型與讀解", "question": "關於「そうだ」、「ようだ」、「らしい」的語感與來源辨析，下列敘述何者正確？", "options": ["1. そうだ 是根據外部消息傳聞", "2. らしい 偏向傳聞、外部消息", "3. ようだ 是單純看外觀樣子判斷", "4. 三者語意完全相同"], "answer": 1, "explanation": "らしい 來源偏傳聞、消息；そうだ 偏外觀樣子；ようだ 偏自己看情況後判斷。"}
+    ];
+
+    const { createApp, ref, computed, onMounted, onUnmounted } = Vue;
+
+    createApp({
+      setup() {
+        const allQuestions = ref([]);
+        const state = ref('setup');
+        const selectedCategory = ref('ALL');
+        const questionAmount = ref(10);
+        const quizList = ref([]);
+        const currentIndex = ref(0);
+        const userAnswers = ref([]);
+
+        onMounted(() => {
+          allQuestions.value = questionsData;
+          window.addEventListener('keydown', handleKeyDown);
+        });
+
+        onUnmounted(() => {
+          window.removeEventListener('keydown', handleKeyDown);
+        });
+
+        // 計算選定分類的實際總題數
+        const categoryTotalCount = computed(() => {
+          if (selectedCategory.value === 'ALL') {
+            return allQuestions.value.length;
+          }
+          return allQuestions.value.filter(q => q.category === selectedCategory.value).length;
+        });
+
+        // 動態生成可選題數選項：10, 20, 30, 40, 50, 60，以及「全部 (總題數)」
+        const availableAmountOptions = computed(() => {
+          const total = categoryTotalCount.value;
+          const presetAmounts = [10, 20, 30, 40, 50, 60];
+          const options = [];
+
+          presetAmounts.forEach(amt => {
+            if (amt < total) {
+              options.push({ value: amt, label: `${amt} 題` });
+            }
+          });
+
+          // 永遠加入「全部 (該分類最大題數)」作為最後一個選項
+          options.push({ value: total, label: `全部 (${total} 題)` });
+
+          return options;
+        });
+
+        // 切換分類時，若目前選擇的題數超出新分類總數，自動平滑校正
+        const onCategoryChange = () => {
+          if (questionAmount.value > categoryTotalCount.value) {
+            questionAmount.value = categoryTotalCount.value;
+          }
+        };
+
+        const startQuiz = () => {
+          let pool = [...allQuestions.value];
+          if (selectedCategory.value !== 'ALL') {
+            pool = pool.filter(q => q.category === selectedCategory.value);
+          }
+          pool.sort(() => Math.random() - 0.5);
+          
+          const targetAmount = Number(questionAmount.value) || 10;
+          quizList.value = pool.slice(0, Math.min(targetAmount, pool.length));
+          
+          currentIndex.value = 0;
+          userAnswers.value = [];
+          state.value = 'quiz';
+        };
+
+        const currentQuestion = computed(() => quizList.value[currentIndex.value] || {});
+
+        const selectOption = (index) => {
+          if (userAnswers.value[currentIndex.value] !== undefined) return;
+          userAnswers.value[currentIndex.value] = index;
+        };
+
+        const nextQuestion = () => {
+          if (currentIndex.value < quizList.value.length - 1) {
+            currentIndex.value++;
+          } else {
+            state.value = 'result';
+          }
+        };
+
+        const getOptionClass = (idx) => {
+          const answered = userAnswers.value[currentIndex.value] !== undefined;
+          const userChoice = userAnswers.value[currentIndex.value];
+          const correctChoice = currentQuestion.value.answer;
+
+          if (!answered) return 'border-slate-200 hover:border-indigo-400 hover:bg-indigo-50/30';
+          if (idx === correctChoice) return 'border-emerald-500 bg-emerald-50 text-emerald-900';
+          if (idx === userChoice && idx !== correctChoice) return 'border-rose-500 bg-rose-50 text-rose-900';
+          return 'border-slate-100 bg-slate-50 text-slate-400';
+        };
+
+        const correctCount = computed(() => {
+          return quizList.value.reduce((acc, q, i) => acc + (userAnswers.value[i] === q.answer ? 1 : 0), 0);
+        });
+
+        const score = computed(() => {
+          if (quizList.value.length === 0) return 0;
+          return Math.round((correctCount.value / quizList.value.length) * 100);
+        });
+
+        const resetToHome = () => { state.value = 'setup'; };
+
+        const handleKeyDown = (e) => {
+          if (state.value !== 'quiz') return;
+          const keyMap = { 'a':0, 'b':1, 'c':2, 'd':3, 'A':0, 'B':1, 'C':2, 'D':3, '1':0, '2':1, '3':2, '4':3 };
+          if (keyMap[e.key] !== undefined) selectOption(keyMap[e.key]);
+          else if (e.key === 'Enter' && userAnswers.value[currentIndex.value] !== undefined) nextQuestion();
+        };
+
+        return {
+          state, selectedCategory, questionAmount, quizList, currentIndex,
+          currentQuestion, userAnswers, startQuiz, selectOption, nextQuestion,
+          getOptionClass, score, correctCount, resetToHome,
+          availableAmountOptions, onCategoryChange
+        };
+      }
+    }).mount('#app');
+  </script>
+</body>
+</html>
